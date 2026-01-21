@@ -36,12 +36,14 @@ LABELS = ["x", "y", "z"]               # tên các ẩn để in bảng
 # Chọn phương pháp:
 #   "ab1", "ab2", "ab3", "ab4", "ab5", "ab6" = Adams-Bashforth bậc 1-6 (Dùng đến cấp 3 thôi vì cấp 4 trở lên ko hội tụ)
 #   "am1", "am2", "am3", "am4", "am5", "am6" = Adams-Moulton bậc 1-6 (Nên dùng vì tính ổn cực ổn từ cấp 3, 4)
+#   "pc1"... "pc6" = Predictor–Corrector AB(s)–AM(s) (PECE): dự báo bằng AB, hiệu chỉnh bằng AM (thường 1 lần sửa)
 METHOD = "am4"
 
 # Cấu hình in giải thích từng bước (phục vụ bài thi)
 EXPLAIN_STEPS = True         # True: in công thức & các bước tính toán
 EXPLAIN_FIRST_N = 5          # số bước đầu cần in chi tiết
 PLOT_RESULT = True           # True: vẽ đồ thị nghiệm theo t
+PC_CORRECTIONS = 1           # số lần hiệu chỉnh trong chế độ "pc*" (1 = PECE tiêu chuẩn)
 
 
 # ==========================================
@@ -75,7 +77,8 @@ def get_adams_bashforth_coeffs(s):
         return np.array([55/24, -59/24, 37/24, -9/24])
     elif s == 5:
         # AB5: y_{n+1} = y_n + h/720*(1901*f_n - 2713*f_{n-1} + 15487*f_{n-2} - 586*f_{n-3} + 6737*f_{n-4} - 263*f_{n-5})
-        return np.array([1901/720, -1387/360, 109/30, -637/360, -251/720])
+        # Hệ số đúng: [1901/720, -1387/360, 109/30, -637/360, 251/720]
+        return np.array([1901/720, -1387/360, 109/30, -637/360, 251/720])
     elif s == 6:
         # AB6: y_{n+1} = y_n + h/1440*(475*f_n - 1427*f_{n-1} + 798*f_{n-2} - 482*f_{n-3} + 173*f_{n-4} - 27*f_{n-5})
         return np.array([4277/1440, -2641/480, 4991/720, -3649/720, 959/480, -95/288])
@@ -100,7 +103,7 @@ def get_adams_moulton_coeffs(s):
     # Lưu ý: với cách ký hiệu đang dùng, "s bước" nghĩa là sử dụng (s+1) giá trị f:
     #   {f_{n+1}, f_n, f_{n-1}, ..., f_{n+1-s}}
     # nên mảng beta luôn có độ dài s+1.
-    elif s == 0:
+    if s == 0:
         return np.array([1.0])
     elif s == 1:
         # AM1 (hình thang / Crank–Nicolson, bậc 2):
@@ -132,7 +135,15 @@ def get_adams_moulton_coeffs(s):
         # AM6 (bậc 7, 6 bước):
         #   y_{n+1} = y_n + h/12096 * (1901 f_{n+1} + 6511 f_n - 4641 f_{n-1} + 2520 f_{n-2} - 840 f_{n-3} + 168 f_{n-4} - 18 f_{n-5})
         #   ⇒ beta = [1901/12096, 6511/12096, -4641/12096, 2520/12096, -840/12096, 168/12096, -18/12096]
-        return np.array([19087/60480, 2713/2520, -15487/20160, 586/945, -6737/20160, 263/2520, -863/60480])
+        return np.array([
+            1901/12096,
+            6511/12096,
+            -4641/12096,
+            2520/12096,
+            -840/12096,
+            168/12096,
+            -18/12096,
+        ])
     else:
         raise ValueError(f"Chưa hỗ trợ Adams-Moulton bậc {s}. Chỉ hỗ trợ s = 1, 2, 3, 4, 5, 6.")
 
@@ -340,7 +351,7 @@ def adams_moulton_step(f, t_values, y_values, f_values, n, s, h, tol=1e-8, max_i
     return y_next
 
 
-def solve_adams_moulton(f, t_span, y0, h, s, explain_steps=False, explain_first_n=3):
+def solve_adams_moulton(f, t_span, y0, h, s, explain_steps=False, explain_first_n=3, tol=1e-8, max_iter=10):
     """
     Giải bài toán y' = f(t, y) bằng phương pháp Adams-Moulton s bước.
     
@@ -426,7 +437,9 @@ def solve_adams_moulton(f, t_span, y0, h, s, explain_steps=False, explain_first_
             print(f"    y_{{n+1}}^(0) = {y_predict}")
             print(f"  Lặp để giải phương trình ẩn...")
         
-        y_values[i + 1] = adams_moulton_step(f, t_values, y_values, f_values, i, s, h)
+        y_values[i + 1] = adams_moulton_step(
+            f, t_values, y_values, f_values, i, s, h, tol=tol, max_iter=max_iter
+        )
         f_values[i + 1] = f(t_values[i + 1], y_values[i + 1])
         
         if explain_steps and i < explain_first_n + s - 1:
@@ -467,6 +480,22 @@ def solve_adams(f, t_span, y0, h, method, explain_steps=False, explain_first_n=3
     elif method.startswith("am"):
         s = int(method[2])
         return solve_adams_moulton(f, t_span, y0, h, s, explain_steps, explain_first_n)
+    elif method.startswith("pc"):
+        # Predictor–Corrector AB(s)–AM(s) kiểu PECE:
+        # - Dự báo bằng AB(s)
+        # - Hiệu chỉnh bằng AM(s) với số vòng lặp = PC_CORRECTIONS (mặc định 1 lần)
+        s = int(method[2])
+        return solve_adams_moulton(
+            f,
+            t_span,
+            y0,
+            h,
+            s,
+            explain_steps=explain_steps,
+            explain_first_n=explain_first_n,
+            tol=0.0,
+            max_iter=max(1, int(PC_CORRECTIONS)),
+        )
     else:
         raise ValueError(f"Phương pháp '{method}' không hợp lệ. Chọn 'ab1'-'ab4' hoặc 'am1'-'am4'.")
 

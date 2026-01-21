@@ -18,23 +18,22 @@ def ode_function(t, Y):
     Ví dụ minh họa (1 ẩn):
         y' = y - t^2 + 1
     """
-    x, y, z = Y
-    dx = 0.4*x*(1 - x/20) + 0.4*y - 0.3*x*z
-    dy = 0.7*y*(1 - y/25) - 0.4*y - 0.4*y*z
-    dz = -0.3*z + 0.35*(x + y)*z
-    return np.array([dx, dy, dz], dtype=float)
+    x, y = Y
+    dx = y
+    dy = ((4*t**3 -6*t**2 + 2.25*t)*x - 2*x*y - 39 * np.exp(-t**2)*(1.25*t**2 - 2.75*t -2))/(2*x)
+    return np.array([dx, dy], dtype=float)
 
 
 # Khoảng thời gian và điều kiện đầu (SỬA CHO ĐÚNG ĐỀ)
-T_SPAN = (0, 1500)       # (t0, T)
-Y0 = np.array([12.0, 18.0, 8.0])         # giá trị đầu: [y0] hoặc [x0, y0, z0, ...]
-H = 0.1                     # bước h
-LABELS = ["x", "y", "z"]               # tên các ẩn để in bảng
+T_SPAN = (0, 3)       # (t0, T)
+Y0 = np.array([39, 39])         # giá trị đầu: [y0] hoặc [x0, y0, z0, ...]
+H = 0.01                     # bước h
+LABELS = ["x", "y"]               # tên các ẩn để in bảng
 
 # Chọn phương pháp:
 #   "rk1" = Euler hiện, "rk2", "rk3", "rk4"
 #   "rk_custom_2" = RK2 tự chọn alpha, "rk_custom_3" = RK3 tự chọn alpha
-METHOD = "rk_custom_3"
+METHOD = "rk4"
 
 # Cấu hình cho RK2 / RK3 tùy chỉnh từ alpha (chỉ dùng nếu METHOD là rk_custom_*)
 CUSTOM_S = 3                 # 2 hoặc 3
